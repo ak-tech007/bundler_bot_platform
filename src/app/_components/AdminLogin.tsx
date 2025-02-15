@@ -1,54 +1,70 @@
-'use client'
-
-import { useState } from "react";
+'use client';
+import { useState, useEffect } from "react";
 import bs58 from "bs58";
+import { Connection, clusterApiUrl } from "@solana/web3.js";
 
-export default function Login() {
-    const [wallet, setWallet] = useState<string | null>(null);
+export default function WalletLogin() {
+    const [wallet, setWallet] = useState<any>(null);
+    const [publicKey, setPublicKey] = useState<string | null>(null);
+    const [loggedIn, setLoggedIn] = useState(false);
 
-    const connectWallet = async () => {
+    useEffect(() => {
+        if ("solana" in window) {
+            setWallet((window as any).solana);
+        }
+    }, []);
+
+    const handleLogin = async () => {
+        if (!wallet) return alert("Phantom Wallet not found! Install it.");
+
         try {
-            const provider = (window as any).solana; // Phantom Wallet
-            if (!provider) throw new Error("Phantom Wallet not found");
+            const response = await wallet.connect();
+            const publicKeyStr = response.publicKey.toString();
+            setPublicKey(publicKeyStr);
 
-            const response = await provider.connect();
-            setWallet(response.publicKey.toString());
+            // 1️⃣ Get Nonce from Backend
+            const nonceRes = await fetch("/api/auth/nonce", { method: "POST" });
+            const { nonce } = await nonceRes.json();
 
-            // Generate a nonce (random challenge)
-            const nonce = `Sign this message to verify: ${Math.random().toString(36).substring(7)}`;
+            console.log("Nonce:", nonce);
 
-            // Request user to sign the nonce
+            // 2️⃣ Sign Nonce using Phantom
             const encodedMessage = new TextEncoder().encode(nonce);
-            const signedMessage = await provider.signMessage(encodedMessage, "utf8");
+            const signedMessage = await wallet.signMessage(encodedMessage, "utf8");
 
-            // Convert signature to Base58
-            const signature = bs58.encode(signedMessage.signature);
+            console.log("Signed Message:", signedMessage.signature);
 
-            console.log(JSON.stringify({ wallet: response.publicKey.toString(), signature, nonce }))
-
-            // Send wallet address, nonce, and signature to backend
-            const res = await fetch("/api/authenticate", {
+            // 3️⃣ Send Signature to Backend for Verification
+            const verifyRes = await fetch("/api/auth/verify", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ wallet: response.publicKey.toString(), signature, nonce }),
+                body: JSON.stringify({
+                    publicKey: publicKeyStr,
+                    signature: bs58.encode(signedMessage.signature),
+                    nonce,
+                }),
             });
 
-            console.log(res)
-
-            // const data = await res.json();
-            // if (data.message === "Authenticated") {
-            //     alert("✅ Login successful!");
-            // } else {
-            //     alert("❌ Authentication failed!");
-            // }
-        } catch (err) {
-            console.error(err);
-            alert("Error connecting Phantom Wallet");
+            const { verified } = await verifyRes.json();
+            if (verified) {
+                setLoggedIn(true);
+                alert("✅ Wallet authenticated successfully!");
+            } else {
+                alert("❌ Verification failed.");
+            }
+        } catch (error) {
+            console.error("Login error:", error);
+            alert("❌ Authentication failed.");
         }
     };
+
     return (
         <div>
-            {wallet ? <p>Connected as: {wallet}</p> : <button onClick={connectWallet}>Login with Phantom</button>}
+            {loggedIn ? (
+                <p>✅ Logged in as: {publicKey}</p>
+            ) : (
+                <button onClick={handleLogin}>Login with Phantom</button>
+            )}
         </div>
     );
 }
