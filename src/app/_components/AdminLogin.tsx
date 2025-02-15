@@ -1,70 +1,76 @@
 'use client';
 import { useState, useEffect } from "react";
 import bs58 from "bs58";
-import { Connection, clusterApiUrl } from "@solana/web3.js";
+import { useAtom } from "jotai";
+import { BalanceAtom, WalletAddress } from "@/store/atom";
+import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+
+const DEVNET_ENDPOINT = "https://api.devnet.solana.com";
 
 export default function WalletLogin() {
-    const [wallet, setWallet] = useState<any>(null);
-    const [publicKey, setPublicKey] = useState<string | null>(null);
-    const [loggedIn, setLoggedIn] = useState(false);
+    const [balance, setBalance] = useAtom(BalanceAtom);
+    const [walletAddress, setWalletAddress] = useAtom(WalletAddress);
 
-    useEffect(() => {
-        if ("solana" in window) {
-            setWallet((window as any).solana);
-        }
-    }, []);
 
-    const handleLogin = async () => {
-        if (!wallet) return alert("Phantom Wallet not found! Install it.");
+    const connectWallet = async () => {
 
         try {
-            const response = await wallet.connect();
-            const publicKeyStr = response.publicKey.toString();
-            setPublicKey(publicKeyStr);
+            const {solana} = window as any;
+            if(solana) {
+                const response = await solana.connect();
+                const publicKeyStr = response.publicKey.toString();
+                const connection = new Connection(DEVNET_ENDPOINT);
+                const _balance = await connection.getBalance(new PublicKey(publicKeyStr));
 
-            // 1️⃣ Get Nonce from Backend
-            const nonceRes = await fetch("/api/auth/nonce", { method: "POST" });
-            const { nonce } = await nonceRes.json();
+                setBalance(_balance / LAMPORTS_PER_SOL)
 
-            console.log("Nonce:", nonce);
+                // 1️⃣ Get Nonce from Backend
+                const nonceRes = await fetch("/api/auth/nonce", { method: "POST" });
+                const { nonce } = await nonceRes.json();
 
-            // 2️⃣ Sign Nonce using Phantom
-            const encodedMessage = new TextEncoder().encode(nonce);
-            const signedMessage = await wallet.signMessage(encodedMessage, "utf8");
+                // 2️⃣ Sign Nonce using Phantom
+                const encodedMessage = new TextEncoder().encode(nonce);
+                const signedMessage = await solana.signMessage(encodedMessage, "utf8");
 
-            console.log("Signed Message:", signedMessage.signature);
+                // 3️⃣ Send Signature to Backend for Verification
+                const verifyRes = await fetch("/api/auth/verify", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        publicKey: publicKeyStr,
+                        signature: bs58.encode(signedMessage.signature),
+                        nonce,
+                    }),
+                });
 
-            // 3️⃣ Send Signature to Backend for Verification
-            const verifyRes = await fetch("/api/auth/verify", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    publicKey: publicKeyStr,
-                    signature: bs58.encode(signedMessage.signature),
-                    nonce,
-                }),
-            });
-
-            const { verified } = await verifyRes.json();
-            if (verified) {
-                setLoggedIn(true);
-                alert("✅ Wallet authenticated successfully!");
-            } else {
-                alert("❌ Verification failed.");
+                const { verified } = await verifyRes.json();
+                if (verified) {
+                    setWalletAddress(publicKeyStr);
+                } else {
+                    alert("❌ Verification failed.");
+                }
             }
         } catch (error) {
-            console.error("Login error:", error);
-            alert("❌ Authentication failed.");
-        }
-    };
+                console.error("Login error:", error);
+            }
+    }
+
+    const disconnectWallet = async () => {
+        setWalletAddress(null);
+        setBalance(null);
+    }
 
     return (
-        <div>
-            {loggedIn ? (
-                <p>✅ Logged in as: {publicKey}</p>
-            ) : (
-                <button onClick={handleLogin}>Login with Phantom</button>
-            )}
+        <>
+        <div className=" pt-14 pb-10 flex flex-col items-center gap-2">
+            {!walletAddress? (
+                <button className="py-3 px-3 rounded-md bg-orange-300 text-lg text-black" onClick={connectWallet}>Wallet Connect</button>) : 
+                (<>
+                <p>{walletAddress.slice(0,4)}...{walletAddress.slice(-4)}</p>
+                <p>{balance} SOL</p>
+                <button className="py-3 px-3 rounded-md bg-orange-300 text-lg text-black" onClick={disconnectWallet}>Disconnect Wallet</button>
+                </>)}
         </div>
+        </>
     );
 }
