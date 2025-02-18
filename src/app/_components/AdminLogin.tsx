@@ -1,8 +1,8 @@
 'use client';
 import { useState, useEffect } from "react";
 import bs58 from "bs58";
-import { useAtom } from "jotai";
-import { BalanceAtom, WalletAddress } from "@/store/atom";
+import { useAtom, useSetAtom } from "jotai";
+import { BalanceAtom, WalletAddress, WalletAtom } from "@/store/atom";
 import { Connection, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 
 const DEVNET_ENDPOINT = "https://api.devnet.solana.com";
@@ -10,6 +10,7 @@ const DEVNET_ENDPOINT = "https://api.devnet.solana.com";
 export default function WalletLogin() {
     const [balance, setBalance] = useAtom(BalanceAtom);
     const [walletAddress, setWalletAddress] = useAtom(WalletAddress);
+    const [wallet, setWallet] = useAtom(WalletAtom);
 
 
     const connectWallet = async () => {
@@ -22,7 +23,7 @@ export default function WalletLogin() {
                 const connection = new Connection(DEVNET_ENDPOINT);
                 const _balance = await connection.getBalance(new PublicKey(publicKeyStr));
 
-                setBalance(_balance / LAMPORTS_PER_SOL)
+                
 
                 // 1️⃣ Get Nonce from Backend
                 const nonceRes = await fetch("/api/auth/nonce", { method: "POST" });
@@ -46,6 +47,8 @@ export default function WalletLogin() {
                 const { verified } = await verifyRes.json();
                 if (verified) {
                     setWalletAddress(publicKeyStr);
+                    setWallet(response)
+                    setBalance(_balance / LAMPORTS_PER_SOL)
                 } else {
                     alert("❌ Verification failed.");
                 }

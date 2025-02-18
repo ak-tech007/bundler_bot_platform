@@ -7,3 +7,6 @@ export const WalletAddress = atomWithStorage<string | null>("walletAddress", nul
 // ✅ Persisted balance using localStorage
 export const BalanceAtom = atomWithStorage<number | null>("walletBalance", null);
 
+// ✅ Phantom Wallet Connection Atom
+export const WalletAtom = atomWithStorage<any | null>("wallet", null);
+
